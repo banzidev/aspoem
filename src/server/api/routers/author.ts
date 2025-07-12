@@ -107,17 +107,33 @@ export const authorRouter = createTRPCRouter({
     }),
   ),
 
+  findNotPoem: publicProcedure.query(async ({ ctx }) =>
+    ctx.db.author.findMany({
+      where: {
+        poems: {
+          none: {},
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        dynasty: true,
+      },
+    }),
+  ),
+
   create: publicProcedure
     .input(
       z.object({
         token: z.string(),
         id: z.number().optional(),
         name: z.string(),
+        name_zh_Hant: z.string().optional(),
         birthDate: z.number().optional(),
         deathDate: z.number().optional(),
         introduce: z.string().optional(),
         namePinYin: z.string().optional(),
-        dynasty: z.string().optional(),
+        dynasty: z.string(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -128,6 +144,7 @@ export const authorRouter = createTRPCRouter({
           where: { id: input.id },
           data: {
             name: input.name.toLocaleLowerCase(),
+            name_zh_Hant: input.name_zh_Hant,
             introduce: input.introduce,
             birthDate: input.birthDate,
             deathDate: input.deathDate,
@@ -140,10 +157,6 @@ export const authorRouter = createTRPCRouter({
       const res = await ctx.db.author.findMany({
         where: {
           name: input.name.toLocaleLowerCase(),
-          introduce: input.introduce,
-          birthDate: input.birthDate,
-          deathDate: input.deathDate,
-          namePinYin: input.namePinYin,
           dynasty: input.dynasty,
         },
       });
@@ -153,8 +166,24 @@ export const authorRouter = createTRPCRouter({
       return ctx.db.author.create({
         data: {
           name: input.name.toLocaleLowerCase(),
+          name_zh_Hant: input.name_zh_Hant,
           dynasty: input.dynasty,
         },
+      });
+    }),
+
+  deleteById: publicProcedure
+    .input(
+      z.object({
+        token: z.string(),
+        id: z.number(),
+      }),
+    )
+    .mutation(({ input, ctx }) => {
+      if (input.token !== process.env.TOKEN) throw new Error("Invalid token");
+
+      return ctx.db.author.delete({
+        where: { id: input.id },
       });
     }),
 });

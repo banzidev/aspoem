@@ -10,6 +10,7 @@ import {
   type Locale,
 } from "~/dictionaries";
 import { api } from "~/trpc/server";
+import { stringFormat } from "~/utils";
 
 interface Props {
   params: { lang: Locale };
@@ -31,22 +32,9 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   const keywords = tags.slice(0, 15).map((item) => item.name);
 
   return {
-    title: getLangText(
-      {
-        "zh-Hans": "标签",
-        "zh-Hant": "標籤",
-      },
-      params.lang,
-    ),
-    description: getLangText(
-      {
-        "zh-Hans": `诗词分类常用标签包括：${keywords.join("，")}等`,
-        "zh-Hant": `詩詞分類常用標籤包括：${keywords.join("，")}等`,
-      },
-      params.lang,
-    ),
+    title: dict.menu.tag,
+    description: stringFormat(dict.tag.description, [keywords.join(",")]),
     alternates: getMetaDataAlternates("/tag", params.lang),
-    keywords: keywords.concat(dict.point_keywords),
   };
 }
 
@@ -82,13 +70,10 @@ export default async function Page(props: Props) {
                 <Button
                   key={item.id}
                   variant={"secondary"}
-                  className="mb-2 mr-2"
+                  className="mb-4 mr-4"
                   asChild
                 >
-                  <Link href={`tag/${item.id}`}>
-                    {item.name}
-                    <sup className="ml-1 font-mono">{item._count.poems}</sup>
-                  </Link>
+                  <Link href={`tag/${item.id}`}>{item.name}</Link>
                 </Button>
               ),
           )}

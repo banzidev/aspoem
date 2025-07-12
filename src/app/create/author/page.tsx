@@ -6,6 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { api } from "~/trpc/react";
+import { pinyin as GeneratePinyin } from "pinyin-pro";
 
 export default function AuthorPage({
   searchParams,
@@ -16,6 +17,13 @@ export default function AuthorPage({
   const id = searchParams.id ? Number(searchParams.id) : undefined;
   const token = searchParams?.token ?? "";
   const router = useRouter();
+  const { data: notPoem } = api.author.findNotPoem.useQuery();
+
+  const deleteAuthor = api.author.deleteById.useMutation({
+    onSuccess() {
+      utils.author.findNotPoem.invalidate();
+    },
+  });
 
   const { data } = api.author.findById.useQuery(id!, {
     refetchOnWindowFocus: false,
@@ -164,13 +172,13 @@ export default function AuthorPage({
         </div>
 
         <Button
-          className="w-full"
+          className="mt-4 w-full"
           onClick={() => {
             create.mutate({
               id,
               token,
               name,
-              namePinYin,
+              namePinYin: namePinYin || GeneratePinyin(name),
               dynasty,
               introduce,
               birthDate: birthDate || undefined,
@@ -180,6 +188,23 @@ export default function AuthorPage({
         >
           Save Author
         </Button>
+
+        <div className="flex flex-wrap">
+          {notPoem?.map((item) => (
+            <Button
+              key={item.id}
+              className="mb-2 mr-2"
+              onClick={() => {
+                deleteAuthor.mutate({
+                  id: item.id,
+                  token,
+                });
+              }}
+            >
+              {item.name}
+            </Button>
+          ))}
+        </div>
       </div>
     </>
   );

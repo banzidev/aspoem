@@ -7,10 +7,9 @@ import { useEffect, useState } from "react";
 import { cn } from "~/utils";
 import {
   Album,
-  ArrowRight,
-  ArrowUpRightIcon,
   Check,
   GithubIcon,
+  Quote,
   Rocket,
   Rows2,
   SendIcon,
@@ -28,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import Link from "next/link";
 
 export function Content({
   className,
@@ -38,11 +38,12 @@ export function Content({
   dict: Dictionary;
   lang: Locale;
 }) {
-  const pathname = usePathname().replace(/(zh-Hans|zh-Hant)\/?/, "");
+  const pathname = usePathname().replace(`/${lang}`, "");
 
   const { data: poemCount } = api.poem.count.useQuery();
   const { data: authorCount } = api.author.count.useQuery();
   const { data: tagsCount } = api.tag.count.useQuery();
+  const { data: cardCount } = api.card.count.useQuery();
   const router = useRouter();
 
   const [style, setStyle] = useState("zinc");
@@ -74,7 +75,7 @@ export function Content({
             href: `/${lang}`,
           },
           {
-            title: dict.menu.auhtor,
+            title: dict.menu.author,
             label: <span className="font-mono">{authorCount}</span>,
             icon: UserRound,
             variant: /^(\/author)/.test(pathname) ? "default" : "ghost",
@@ -94,61 +95,20 @@ export function Content({
             variant: /^(\/tag)/.test(pathname) ? "default" : "ghost",
             href: `/${lang}/tag`,
           },
+          {
+            title: "片段",
+            icon: Quote,
+            label: <span className="font-mono">{cardCount}</span>,
+            variant: /^(\/quota)/.test(pathname) ? "default" : "ghost",
+            href: `/${lang}/quota`,
+          },
         ]}
       />
 
       <div className="px-4">
         <Separator className="my-4" />
       </div>
-      <p className="px-4 text-base text-muted-foreground">
-        {dict.menu.contact}
-      </p>
-      <div>
-        <Nav
-          isCollapsed={false}
-          links={[
-            {
-              title: dict.menu.feedback,
-              href: `/${lang}/feedback`,
-              icon: SendIcon,
-              variant: "ghost",
-              label: <ArrowRight className="h-4 w-4 text-destructive" />,
-            },
-            {
-              title: "Github",
-              icon: GithubIcon,
-              variant: "ghost",
-              href: "https://github.com/meetqy/aspoem",
-              label: (
-                <ArrowUpRightIcon className="h-4 w-4 text-muted-foreground" />
-              ),
-            },
-            {
-              title: "Twitter",
-              icon: TwitterIcon,
-              variant: "ghost",
-              href: "https://twitter.com/meetqy",
-              label: (
-                <ArrowUpRightIcon className="h-4 w-4 text-muted-foreground" />
-              ),
-            },
-            {
-              title: "Product Hunt",
-              icon: Rocket,
-              variant: "ghost",
-              href: "https://www.producthunt.com/products/aspoem-com-learn-chinese-poetry",
-              label: (
-                <ArrowUpRightIcon className="h-4 w-4 text-muted-foreground" />
-              ),
-            },
-          ]}
-        />
-      </div>
-
-      <div className="px-4">
-        <Separator className="my-4" />
-      </div>
-      <p className="px-4 text-base text-muted-foreground">{dict.menu.theme}</p>
+      <p className="px-4 text-f50 text-muted-foreground">{dict.menu.theme}</p>
       <div className="my-4 flex justify-between px-4">
         {["zinc", "rose", "blue", "green", "orange"].map((item) => (
           <Button
@@ -177,10 +137,10 @@ export function Content({
           </Button>
         ))}
       </div>
-      <p className="px-4 text-base text-muted-foreground">
+      <p className="px-4 text-f50 text-muted-foreground">
         {dict.menu.language}
       </p>
-      <div className="my-4 px-4">
+      <div className="my-4 px-4 text-f50">
         <Select
           value={lang}
           onValueChange={(value) => {
@@ -196,6 +156,64 @@ export function Content({
             <SelectItem value="zh-Hant">中文繁体</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+      <div className="px-4">
+        <Separator className="my-4" />
+      </div>
+      <p className="px-4 text-f50 text-muted-foreground">{dict.menu.contact}</p>
+      <nav className="flex space-x-2 p-4">
+        {[
+          {
+            title: "GitHub",
+            href: "https://github.com/meetqy/aspoem",
+            icon: <GithubIcon className="h-6 w-6" strokeWidth={1.5} />,
+          },
+          {
+            title: "twitter",
+            href: "https://twitter.com/meetqy",
+            icon: <TwitterIcon className="h-6 w-6" strokeWidth={1.5} />,
+          },
+          {
+            title: `ProductHunt`,
+            href: "https://www.producthunt.com/products/aspoem-com-learn-chinese-poetry",
+            icon: <Rocket className="h-6 w-6" strokeWidth={1.5} />,
+          },
+          {
+            title: "留言",
+            href: `/${lang}/feedback`,
+            icon: (
+              <SendIcon
+                className="h-6 w-6 text-destructive"
+                strokeWidth={1.5}
+              />
+            ),
+          },
+        ].map(({ href, icon, title }) => (
+          <Button
+            key={href}
+            size={"icon"}
+            variant={"ghost"}
+            aria-label={title}
+            asChild
+          >
+            <Link
+              aria-label={title}
+              href={href}
+              className="flex cursor-pointer justify-center"
+            >
+              {icon}
+            </Link>
+          </Button>
+        ))}
+      </nav>
+      <div className="px-4">
+        <Separator className="mb-4" />
+      </div>
+      <p className="px-4 text-f50 text-muted-foreground">备案号</p>
+      <div className="my-4 px-4 text-f50">
+        <Link href={"http://beian.miit.gov.cn/"} target="_blank">
+          蜀ICP备2023009496号-2
+        </Link>
       </div>
     </div>
   );

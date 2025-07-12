@@ -3,13 +3,14 @@ import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { LangZod, transformPoem, transformTag } from "../utils";
 import { pick } from "lodash-es";
 import { type Author, type PrismaClient } from "@prisma/client";
+import { type Locale } from "~/dictionaries";
 
 interface FindMany {
   input: {
     select: ("type" | "name" | "introduce" | "_count")[];
     page: number;
     pageSize: number;
-    lang: "zh-Hans" | "zh-Hant";
+    lang: Locale;
     type?: string | null | undefined;
   };
   ctx: {
@@ -155,7 +156,7 @@ export const tagRouter = createTRPCRouter({
             "author",
             "views",
           ]);
-          
+
           json.author = pick(json.author, [
             "id",
             "name",
@@ -172,8 +173,30 @@ export const tagRouter = createTRPCRouter({
   findById: publicProcedure.input(z.number()).query(({ input, ctx }) =>
     ctx.db.tag.findFirst({
       where: { id: input },
+      include: { poems: true },
     }),
-  ),  
+  ),
+
+  conntentPoemIds: publicProcedure
+    .input(
+      z.object({
+        token: z.string(),
+        ids: z.array(z.number()),
+        tagId: z.number(),
+      }),
+    )
+    .mutation(({ input, ctx }) => {
+      if (input.token !== process.env.TOKEN) throw new Error("Invalid token");
+
+      return ctx.db.tag.update({
+        where: { id: input.tagId },
+        data: {
+          poems: {
+            connect: input.ids.map((id) => ({ id })),
+          },
+        },
+      });
+    }),
 
   deleteById: publicProcedure
     .input(z.number())
@@ -190,11 +213,18 @@ export const tagRouter = createTRPCRouter({
         type_zh_Hant: z.string().optional(),
         introduce: z.string().optional(),
         introduce_zh_Hant: z.string().optional(),
+        adsUrl: z.string().optional(),
+        adsImage: z.string().optional(),
+        adsTitle: z.string().optional(),
+        adsContent: z.string().optional(),
+        adsPrice: z.number().optional(),
       }),
     )
     .mutation(({ input, ctx }) => {
       if (input.token !== process.env.TOKEN) throw new Error("Invalid token");
       const { id } = input;
+
+      console.log(input.adsPrice);
 
       const objJson = {
         ...input,

@@ -2,6 +2,70 @@ import { type Author, type Poem } from "@prisma/client";
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "~/server/api/trpc";
 import { LangZod, transformPoem, transformTag } from "../utils";
+import { splitChineseSymbol } from "~/utils";
+
+let token: {
+  access_token: string;
+  expires_in: number;
+  time: number;
+};
+
+const getToken = async () => {
+  if (!token || token.time + token.expires_in * 1000 < Date.now()) {
+    const res = await fetch(
+      `https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=${process.env.BAIDU_YIYAN_API_KEY}&client_secret=${process.env.BAIDU_YIYAN_SECRET_KEY}`,
+      { method: "POST" },
+    );
+
+    const data = (await res.json()) as {
+      access_token: string;
+      expires_in: number;
+    };
+
+    token = {
+      ...data,
+      time: Date.now(),
+    };
+  }
+
+  return token;
+};
+
+const getTranslation = async (content: string) => {
+  const _token = await getToken();
+
+  const res = await fetch(
+    `https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/ernie-3.5-8k-preview?access_token=${_token.access_token}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content:
+              "你只需要将我发送的诗词内容进行白话文翻译，不需要赏析，不需要任何多余内容，只需要白话文翻译。不需要加上描述性文字“希望能符合我的要求”类似的结束语。不需要“以下是 xxx “的开始语， 确认请回复“确认”",
+          },
+          {
+            role: "assistant",
+            content:
+              "确认。请提供您需要翻译的诗词内容，我会直接将其翻译成白话文。",
+          },
+          {
+            role: "user",
+            content: content,
+          },
+        ],
+      }),
+    },
+  );
+
+  const json = (await res.json()) as { result: string };
+
+  return json.result;
+};
 
 export const poemRouter = createTRPCRouter({
   count: publicProcedure.query(({ ctx }) => ctx.db.poem.count()),
@@ -36,6 +100,7 @@ export const poemRouter = createTRPCRouter({
     )
     .mutation(async ({ input, ctx }) => {
       if (input.token !== process.env.TOKEN) throw new Error("Invalid token");
+      await ctx.db.card.deleteMany({ where: { poemId: input.id } });
       return ctx.db.poem.delete({ where: { id: input.id } });
     }),
 
@@ -90,7 +155,7 @@ export const poemRouter = createTRPCRouter({
   ),
 
   search: publicProcedure
-    .input(z.string().optional())
+    .input(z.string().default(""))
     .query(({ input, ctx }) => {
       return ctx.db.poem.findMany({
         where: {
@@ -146,69 +211,29 @@ export const poemRouter = createTRPCRouter({
             author: true,
           },
         });
+      } else if (input.sort === "updatedAt") {
+        // 首页推荐
+        const temp = await ctx.db.poem.findMany({
+          orderBy: {
+            updatedAt: "desc",
+          },
+          include: {
+            author: true,
+          },
+          take: 500,
+        });
+
+        data = temp.filter((item) => item.translation).slice(0, pageSize);
       } else {
-        let temp: (Poem & {
-          "author.name": Author["name"];
-          "author.dynasty": Author["dynasty"];
-          "author.id": Author["id"];
-          "author.namePinYin": Author["namePinYin"];
-          "author.introduce": Author["introduce"];
-          "author.birthDate": Author["birthDate"];
-          "author.deathDate": Author["deathDate"];
-          "author.updatedAt": Author["updatedAt"];
-          "author.createdAt": Author["createdAt"];
-          author: Author;
-        })[] = [];
-
-        if (input.sort === "updatedAt") {
-          // 首页推荐
-          temp = await ctx.db
-            .$queryRaw`SELECT p.*, a."id" AS "author.id", a.name AS "author.name", a.dynasty as "author.dynasty", a."namePinYin" as "author.namePinYin", a."introduce" as "author.introduce", a."birthDate" as "author.birthDate", a."deathDate" as "author.deathDate", a."createdAt" as "author.createdAt", a."updatedAt" as "author.updatedAt"
-      from "Poem" p left join "Author" a ON p."authorId"=a.id
-      ORDER BY CASE WHEN p.translation IS NULL OR p.translation = '' THEN 1 ELSE 0 END, p."updatedAt" DESC
-      limit ${pageSize} offset ${(page - 1) * pageSize};`;
-        } else if (input.sort === "createdAt") {
-          // 最新
-          temp = await ctx.db
-            .$queryRaw`SELECT p.*, a."id" AS "author.id", a.name AS "author.name", a.dynasty as "author.dynasty", a."namePinYin" as "author.namePinYin", a."introduce" as "author.introduce", a."birthDate" as "author.birthDate", a."deathDate" as "author.deathDate", a."createdAt" as "author.createdAt", a."updatedAt" as "author.updatedAt"
-      from "Poem" p left join "Author" a ON p."authorId"=a.id
-      ORDER BY CASE WHEN p.translation IS NULL OR p.translation = '' THEN 1 ELSE 0 END, p."createdAt" DESC
-      limit ${pageSize} offset ${(page - 1) * pageSize};`;
-        }
-
-        data = temp.map((item) => {
-          return {
-            author: {
-              id: item["author.id"],
-              name: item["author.name"],
-              dynasty: item["author.dynasty"],
-              namePinYin: item["author.namePinYin"],
-              introduce: item["author.introduce"],
-              birthDate: item["author.birthDate"],
-              deathDate: item["author.deathDate"],
-              updatedAt: item["author.updatedAt"],
-              createdAt: item["author.createdAt"],
-            },
-            id: item.id,
-            title: item.title,
-            title_zh_Hant: item.title_zh_Hant,
-            titlePinYin: item.titlePinYin,
-            content: item.content,
-            content_zh_Hant: item.content_zh_Hant,
-            contentPinYin: item.contentPinYin,
-            classify: item.classify,
-            genre: item.genre,
-            introduce: item.introduce,
-            introduce_zh_Hant: item.introduce_zh_Hant,
-            translation: item.translation,
-            translation_zh_Hant: item.translation_zh_Hant,
-            annotation: item.annotation,
-            annotation_zh_Hant: item.annotation_zh_Hant,
-            updatedAt: item.updatedAt,
-            createdAt: item.createdAt,
-            authorId: item.authorId,
-            views: item.views,
-          };
+        data = await ctx.db.poem.findMany({
+          orderBy: {
+            createdAt: "desc",
+          },
+          include: {
+            author: true,
+          },
+          skip: (page - 1) * pageSize,
+          take: pageSize,
         });
       }
 
@@ -261,6 +286,23 @@ export const poemRouter = createTRPCRouter({
     }),
 
   /**
+   * 文心一言生成诗词译文
+   */
+  genTranslation: publicProcedure
+    .input(
+      z.object({
+        token: z.string(),
+        content: z.string(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      if (input.token !== process.env.TOKEN) throw new Error("Invalid token");
+
+      const translation = await getTranslation(input.content);
+      return translation;
+    }),
+
+  /**
    * 根据 id 查找诗词
    */
   findById: publicProcedure
@@ -286,17 +328,73 @@ export const poemRouter = createTRPCRouter({
         include: {
           tags: true,
           author: true,
+          cards: true,
         },
       });
 
       if (!res) return;
 
-      const is_hant = !!res.content_zh_Hant;
+      // 特殊逻辑，自动标注五言绝句/七言绝句
+      const has = res.tags.find((tag) =>
+        ["五言绝句", "七言绝句", "五言律诗", "七言律诗"].includes(tag.name),
+      );
 
-      return {
-        ...transformPoem(res, input.lang),
-        is_hant,
-      };
+      if (!has) {
+        const contentArr = splitChineseSymbol(res.content, false);
+
+        let connectTagId = -1;
+
+        // 绝句
+        if (contentArr?.length === 4) {
+          if (contentArr.every((item) => item.length === 5)) {
+            connectTagId = 109;
+          }
+          if (contentArr.every((item) => item.length === 7)) {
+            connectTagId = 110;
+          }
+        }
+
+        // 律诗
+        if (contentArr?.length === 8) {
+          if (contentArr.every((item) => item.length === 5)) {
+            connectTagId = 105;
+          }
+
+          if (contentArr.every((item) => item.length === 7)) {
+            connectTagId = 108;
+          }
+        }
+
+        if (connectTagId !== -1) {
+          void ctx.db.poem
+            .update({
+              where: { id },
+              data: { tags: { connect: [{ id: connectTagId }] } },
+            })
+            .catch((e) => {
+              console.log(e);
+            });
+        }
+      }
+
+      return transformPoem(res, input.lang);
+    }),
+
+  findByIdSelected: publicProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        selected: z.array(z.enum(["translation_en"])).default([]),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      return ctx.db.poem.findUnique({
+        where: { id: input.id },
+        select: {
+          id: true,
+          translation_en: input.selected.includes("translation_en"),
+        },
+      });
     }),
   /**
    * 创建诗词
@@ -390,38 +488,42 @@ export const poemRouter = createTRPCRouter({
       });
     }),
 
-  updateHant: publicProcedure
+  checkedExist: publicProcedure
     .input(
       z.object({
-        title: z.string().optional(),
-        content: z.string().optional(),
-        introduce: z.string().optional(),
-        translation: z.string().optional(),
-        annotation: z.string().optional(),
+        title: z.string(),
+        authorName: z.string(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const res = await ctx.db.poem.findFirst({
+        where: {
+          title: input.title.toLocaleLowerCase(),
+          author: {
+            name: input.authorName,
+          },
+        },
+      });
+
+      return res ? true : false;
+    }),
+
+  updateLocale: publicProcedure
+    .input(
+      z.object({
+        translation_en: z.string().optional(),
         id: z.number(),
+        token: z.string(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const res = await ctx.db.poem.findUnique({
-        where: { id: input.id },
-      });
-
-      if (!res) return;
+      if (input.token !== process.env.TOKEN) throw new Error("Invalid token");
 
       const json: Record<string, string> = {};
 
-      if (res.title_zh_Hant !== input.title && input.title)
-        json.title_zh_Hant = input.title;
-      if (res.content_zh_Hant !== input.content && input.content)
-        json.content_zh_Hant = input.content;
-      if (res.introduce_zh_Hant !== input.introduce && input.introduce)
-        json.introduce_zh_Hant = input.introduce;
-      if (res.translation_zh_Hant !== input.translation && input.translation)
-        json.translation_zh_Hant = input.translation;
-      if (res.annotation_zh_Hant !== input.annotation && input.annotation)
-        json.annotation_zh_Hant = input.annotation;
-
-      if (Object.keys(json).length === 0) return;
+      if (input.translation_en) {
+        json.translation_en = input.translation_en;
+      }
 
       return ctx.db.poem.update({
         where: { id: input.id },

@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { convertToHans, convertToHant } from "~/utils/convert";
+import { type Author, type Poem, type Tag } from "@prisma/client";
 
 export default function CreatePage() {
   const utils = api.useUtils();
@@ -32,7 +33,7 @@ export default function CreatePage() {
     pageSize: 9999,
   });
 
-  const { data: poem } = api.poem.findById.useQuery(
+  const { data: poemT } = api.poem.findById.useQuery(
     {
       id: Number(id),
     },
@@ -41,17 +42,24 @@ export default function CreatePage() {
     },
   );
 
+  const poem = poemT as Poem & { author: Author; tags: Tag[] };
+
   const [keyword, setKeyword] = useState("");
 
   // 作者
   const { data } = api.author.findMany.useQuery({
-    select: ["name"],
+    select: ["name", "dynasty"],
     keyword,
   });
 
   const authors = data?.data;
 
   const mutation = {
+    genTranslate: api.poem.genTranslation.useMutation({
+      onSuccess(data) {
+        setTranslation(data);
+      },
+    }),
     deletePoem: api.poem.deleteById.useMutation({
       onSuccess: async () => {
         await utils.poem.findById.invalidate({
@@ -105,6 +113,7 @@ export default function CreatePage() {
     }),
   };
 
+  const [json, setJson] = useState("");
   const [title, setTitle] = useState("");
   const [titlePinYin, setTitlePinYin] = useState("");
   const [contentPinYin, setContentPinYin] = useState("");
@@ -163,10 +172,9 @@ export default function CreatePage() {
   return (
     <>
       <div className="flex flex-col space-y-2">
-        <h3 className="text-2xl font-semibold leading-none tracking-tight">
-          {id ? "Edit" : "Add New"} Poem
+        <h3>
+          <span className="prose-h1">{id ? "Edit" : "Add New"} Poem</span>
           <Button
-            size={"sm"}
             className="ml-2"
             onClick={() => {
               if (!titlePinYin) {
@@ -186,7 +194,6 @@ export default function CreatePage() {
             生成拼音
           </Button>
           <Button
-            size={"sm"}
             className="ml-2"
             onClick={() => {
               setTitle(convertToHans(title));
@@ -198,11 +205,43 @@ export default function CreatePage() {
             繁转简
           </Button>
         </h3>
-        <p className="text-muted-foreground">
+        <p className="text-f50 text-muted-foreground">
           Fill out the details htmlFor your new poem
         </p>
       </div>
-      <div className="space-y-4 p-6">
+      <div className="space-y-4 p-6 text-f50">
+        <div className="flex justify-between space-x-4">
+          <Button
+            onClick={() => {
+              const obj = JSON.parse(json) as {
+                annotation: string;
+                content: string;
+                title: string;
+                translation: string;
+                author: string;
+              };
+
+              setTitle(obj.title);
+              setContent(obj.content.replace("\n", ""));
+              setTranslation(obj.translation.replace("译文\n", ""));
+              setFormat(obj.annotation.replace("注释\n", ""));
+              setKeyword(obj.author);
+            }}
+          >
+            一键填充
+          </Button>
+          <Input
+            value={json}
+            placeholder="{
+              annotation: string;
+              content: string;
+              title: string;
+              translation: string;
+            }"
+            onChange={(e) => setJson(e.target.value)}
+          />
+        </div>
+
         {/* 名字 */}
         <div className="grid grid-cols-2 gap-x-4">
           <div className="space-y-2">
@@ -265,7 +304,7 @@ export default function CreatePage() {
                 <SelectContent>
                   {authors?.map((item) => (
                     <SelectItem key={item.id} value={item.id.toString()}>
-                      {item.name}
+                      {item.dynasty}·{item.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -282,13 +321,18 @@ export default function CreatePage() {
         <div className="grid grid-cols-2 gap-x-4">
           <div className="space-y-2">
             <label className="font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-              <span className="text-red-500">*</span> 内容
+              <span className="text-red-500">*</span> 内容{" "}
             </label>
             <Textarea
               placeholder="输入内容"
               required
               value={content}
               className="h-32"
+              onBlur={() => {
+                setContent((v) => {
+                  return v.replace(/\n+|(\n\s+)|(\s+\n)/g, "\n");
+                });
+              }}
               onChange={(e) => setContent(e.target.value)}
             />
           </div>
@@ -315,11 +359,34 @@ export default function CreatePage() {
           <div className="space-y-2">
             <label className="font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
               译文
+              <Button
+                className="ml-2"
+                size={"sm"}
+                onClick={() => {
+                  if (mutation.genTranslate.isLoading) return;
+                  if (!content) {
+                    alert("请输入内容");
+                    return;
+                  }
+
+                  mutation.genTranslate.mutate({
+                    token,
+                    content,
+                  });
+                }}
+              >
+                生成
+              </Button>
             </label>
             <Textarea
               placeholder="白话文"
               required
               value={translation}
+              onBlur={() => {
+                setTranslation((v) => {
+                  return v.replace(/\n+|(\n\s+)|(\s+\n)/g, "\n");
+                });
+              }}
               onChange={(e) => setTranslation(e.target.value)}
             />
           </div>
@@ -346,7 +413,6 @@ export default function CreatePage() {
               <Button
                 key={item.id}
                 variant={tagIds.includes(item.id) ? "default" : "ghost"}
-                size={"xs"}
                 onClick={() => {
                   if (tagIds.includes(item.id)) {
                     setTagIds(tagIds.filter((i) => i !== item.id));
@@ -364,7 +430,6 @@ export default function CreatePage() {
         <div className="space-y-2">
           <div className="flex space-x-2 font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
             <Button
-              size={"sm"}
               onClick={() => {
                 setAnnotations([
                   ...annotations,
@@ -381,7 +446,6 @@ export default function CreatePage() {
               className="mr-2"
             />
             <Button
-              size={"sm"}
               onClick={() => {
                 const arrs = format.split("\n");
 
@@ -408,7 +472,6 @@ export default function CreatePage() {
             <div className="grid grid-cols-4 gap-4" key={index}>
               <div className="col-span-1 flex items-center space-x-2">
                 <Button
-                  size={"sm"}
                   variant={"outline"}
                   className="h-8 w-8 rounded-full"
                   onClick={() => {

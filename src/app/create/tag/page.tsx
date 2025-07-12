@@ -8,21 +8,34 @@ import { Textarea } from "~/components/ui/textarea";
 import { api } from "~/trpc/react";
 import { convertToHant } from "~/utils/convert";
 
-export default function Tag({
-  searchParams,
-}: {
-  searchParams: { id?: string; token?: string };
-}) {
-  const id = searchParams.id ? Number(searchParams.id) : undefined;
+export default function Tag() {
+  const params = useSearchParams();
+  const id = params.get("id") ? Number(params.get("id")) : -1;
+  const token = params.get("token") ?? "";
+
   const router = useRouter();
   const [name, setName] = useState("");
   const [introduce, setIntroduce] = useState("");
   const [type, setType] = useState("");
-  const params = useSearchParams();
-  const token = params.get("token") ?? "";
 
-  const { data: tag } = api.tag.findById.useQuery(id!, {
+  const { data: tag } = api.tag.findById.useQuery(id, {
     refetchOnWindowFocus: false,
+  });
+  const [ads, setAds] = useState<{
+    adsUrl?: string | undefined;
+    adsImage?: string | undefined;
+    adsTitle?: string | undefined;
+    adsContent?: string | undefined;
+    adsPrice?: string | undefined;
+  }>({});
+
+  const connectPoemIds = api.tag.conntentPoemIds.useMutation({
+    onSuccess: () => {
+      alert("Connected!");
+    },
+    onError: (err) => {
+      alert(err.message);
+    },
   });
 
   useEffect(() => {
@@ -56,27 +69,29 @@ export default function Tag({
       setName(tag.name);
       setIntroduce(tag.introduce ?? "");
       setType(tag.type ?? " ");
+      setAds({
+        adsUrl: tag.adsUrl || undefined,
+        adsImage: tag.adsImage || undefined,
+        adsTitle: tag.adsTitle || undefined,
+        adsContent: tag.adsContent || undefined,
+        adsPrice: tag.adsPrice?.toString() || undefined,
+      });
     }
   }, [tag]);
 
+  const [poemIds, setPoemIds] = useState<string>("");
+
   return (
-    <>
+    <div className="text-f50">
       <div className="flex flex-col space-y-2">
-        <h3 className="text-2xl font-semibold leading-none tracking-tight">
-          Tag Management
-        </h3>
-        <p className="text-muted-foreground ">
-          Enter the name of the new tag you want to create.
-        </p>
+        <h3 className="text-f300">标签管理</h3>
+        <p className="text-muted-foreground">{id ? "编辑标签" : "创建标签"}</p>
       </div>
 
       <div className="space-y-4 py-6">
         <div className="grid grid-cols-2 gap-x-4">
           <div className="space-y-2">
-            <label
-              className="font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-              htmlFor="authorName"
-            >
+            <label htmlFor="authorName">
               <span className="text-red-500">*</span> 标签名字
             </label>
             <Input
@@ -87,12 +102,7 @@ export default function Tag({
           </div>
 
           <div className="space-y-2">
-            <label
-              className="font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-              htmlFor="authorName"
-            >
-              类型
-            </label>
+            <label htmlFor="authorName">类型</label>
             <Input
               placeholder="输入类型"
               value={type}
@@ -102,9 +112,7 @@ export default function Tag({
         </div>
 
         <div className="space-y-2">
-          <label className="font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-            介绍
-          </label>
+          <label>介绍</label>
           <Textarea
             value={introduce}
             onChange={(e) => setIntroduce(e.target.value)}
@@ -114,36 +122,103 @@ export default function Tag({
           />
         </div>
 
-        <Button
-          variant={"destructive"}
-          className="w-full"
-          onClick={() => {
-            window.confirm("Are you sure you wish to delete this item?")
-              ? del.mutate(id!)
-              : null;
-          }}
-        >
-          删除
-        </Button>
+        <div className="space-y-2">
+          <label>Ads</label>
+          <div className="grid grid-cols-3 gap-4">
+            <Input
+              placeholder="ads url"
+              value={ads?.adsUrl}
+              onChange={(e) => setAds({ ...ads, adsUrl: e.target.value })}
+            />
+            <Input
+              placeholder="ads image"
+              value={ads.adsImage}
+              onChange={(e) => setAds({ ...ads, adsImage: e.target.value })}
+            />
+            <Input
+              placeholder="ads title"
+              value={ads.adsTitle}
+              onChange={(e) => setAds({ ...ads, adsTitle: e.target.value })}
+            />
+            <Input
+              placeholder="ads content"
+              value={ads.adsContent}
+              onChange={(e) => setAds({ ...ads, adsContent: e.target.value })}
+            />
+            <Input
+              placeholder="ads price"
+              value={ads.adsPrice}
+              onChange={(e) => setAds({ ...ads, adsPrice: e.target.value })}
+            />
+          </div>
+        </div>
 
-        <Button
-          className="w-full"
-          onClick={() => {
-            create.mutate({
-              id,
-              token,
-              name,
-              name_zh_Hant: convertToHant(name),
-              type,
-              type_zh_Hant: convertToHant(type),
-              introduce,
-              introduce_zh_Hant: convertToHant(introduce),
-            });
-          }}
-        >
-          保存
-        </Button>
+        <div className="mt-8">
+          <div className="flex flex-col space-y-2">
+            <h3 className="text-f300">批量关联诗词</h3>
+          </div>
+
+          <div className="mt-4 grid grid-cols-3 space-x-4">
+            <Input
+              className="col-span-2"
+              placeholder="输入诗词ID，多个ID用逗号分隔"
+              value={poemIds}
+              onChange={(e) => setPoemIds(e.target.value)}
+            />
+            <Button
+              onClick={() => {
+                if (poemIds && tag?.id) {
+                  connectPoemIds.mutate({
+                    tagId: tag.id,
+                    ids: poemIds.split(",").map((id) => Number(id)),
+                    token,
+                  });
+                }
+              }}
+            >
+              关联输入的诗词ID
+            </Button>
+          </div>
+        </div>
+
+        <div className="!mt-12 flex space-x-2">
+          <Button
+            variant={"destructive"}
+            className="w-full"
+            onClick={() => {
+              window.confirm("Are you sure you wish to delete this item?")
+                ? del.mutate(id)
+                : null;
+            }}
+          >
+            删除
+          </Button>
+
+          <Button
+            className="w-full"
+            onClick={() => {
+              console.log(Number(ads.adsPrice));
+              create.mutate({
+                id: id === -1 ? undefined : id,
+                token,
+                name,
+                name_zh_Hant: convertToHant(name),
+                type,
+                type_zh_Hant: convertToHant(type),
+                introduce,
+                introduce_zh_Hant: convertToHant(introduce),
+                adsUrl: ads.adsUrl,
+                adsImage: ads.adsImage,
+                adsTitle: ads.adsTitle,
+                adsContent: ads.adsContent,
+                adsPrice: Number(ads.adsPrice),
+              });
+            }}
+          >
+            保存
+          </Button>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
